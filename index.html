@@ -1,0 +1,1573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Anime Watch Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+	<link rel="icon" type="image/png" href="favicon-192.png">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Set default font to Inter for a modern look */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            min-height: 10vh;
+        }
+        /* Custom scrollbar for a dark theme */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #111827; /* Tailwind gray-900 */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #ea580c; /* Tailwind orange-700 */
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #f97316; /* Tailwind orange-600 */
+        }
+        /* Hide total_episodes input arrows */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+
+        /* Define pulse animation for highlight */
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+        .animate-pulse {
+          animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        /* Long Press Visual Feedback Bar */
+        .long-press-indicator {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 5px; /* Thicker bar for visibility */
+            width: 0%;
+            background-color: #f97316; /* primary-orange */
+            opacity: 0;
+            /* Match card border radius */
+            border-bottom-left-radius: 10px;
+            border-bottom-right-radius: 10px;
+            z-index: 10;
+        }
+        
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary-orange': '#f97316', /* orange-600 */
+                        'primary-dark': '#111827',   /* gray-900 */
+                        'secondary-dark': '#1f2937', /* gray-800 */
+                        'light-text': '#f3f4f6',     /* gray-100 */
+                        'muted-text': '#9ca3af',     /* gray-400 */
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-primary-dark text-light-text antialiased">
+
+    <div id="app" class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <section id="top-bar-container" class="flex flex-col md:flex-row items-start md:items-center mb-10 gap-4">
+            
+            <div id="user-info" 
+                 class="flex items-center text-muted-text text-sm hover:text-light-text transition cursor-pointer mb-2 md:mb-0" 
+                 onclick="showUserSelectModal()">
+                <span data-lucide="user" class="w-5 h-5 mr-2 text-primary-orange"></span>
+                <span id="current-username" class="font-semibold text-sm sm:text-base truncate">Loading User...</span>
+                <span data-lucide="chevrons-up-down" class="w-4 h-4 ml-1 text-primary-orange"></span>
+            </div>
+            
+            <div id="search-bar-wrapper" class="relative flex-grow w-full md:w-auto">
+                <input type="text" id="search-input" placeholder="Search for an anime (e.g., Attack on Titan)..." 
+                       class="w-full p-4 pl-12 sm:pl-16 rounded-xl bg-secondary-dark border border-primary-orange/30 focus:border-primary-orange focus:ring-1 focus:ring-primary-orange text-light-text transition duration-200 shadow-lg pr-12 sm:pr-16"
+                       onkeyup="debouncedSearch()" 
+                       oninput="toggleClearButton()">
+                
+                <span data-lucide="search" class="w-5 h-5 absolute left-4 sm:left-6 top-1/2 transform -translate-y-1/2 text-primary-orange"></span>
+                
+                <button id="clear-search-btn" onclick="clearSearch()"
+                        class="absolute right-4 sm:right-6 top-1/2 transform -translate-y-1/2 text-primary-orange p-1 hover:text-orange-300 transition duration-150 hidden">
+                    <span data-lucide="x-circle" class="w-5 h-5"></span>
+                </button>
+            </div>
+        </section>
+        
+        <section class="mb-12">
+            <div id="search-results" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                </div>
+            
+            <div id="search-message" class="text-center text-muted-text mt-8 hidden">
+                Search for an anime to begin tracking!
+            </div>
+            <div id="loading-indicator" class="text-center text-primary-orange mt-8 hidden">
+                <span data-lucide="loader-2" class="animate-spin inline-block w-8 h-8"></span> Loading...
+            </div>
+        </section>
+
+        <section>
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-3xl font-bold flex items-center">
+                    My List 
+                    <span data-lucide="list-checks" class="w-6 h-6 ml-2 text-primary-orange"></span>
+                </h2>
+                <div class="flex items-center space-x-2">
+                    <label for="sort-select" class="text-muted-text text-sm hidden sm:block">Sort By:</label>
+                    <select id="sort-select" onchange="sortAndRenderList(this.value)"
+                            class="p-2 rounded-lg bg-gray-700 border border-primary-orange/50 focus:ring-1 focus:ring-primary-orange focus:border-primary-orange text-light-text text-sm cursor-pointer">
+                        <option value="timestamp_desc">Date Added (Newest)</option>
+                        <option value="timestamp_asc">Date Added (Oldest)</option>
+                        <option value="title_asc">Name (A-Z)</option>
+                        <option value="title_desc">Name (Z-A)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div id="filter-controls" class="flex flex-wrap gap-3 mb-6">
+                </div>
+
+            <div id="tracking-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                </div>
+            <p id="empty-list-message" class="text-center text-muted-text mt-8 text-xl hidden">
+                Your tracking list is empty. Search for an anime above to add it!
+            </p>
+        </section>
+    </div>
+
+    <div id="toast-message" class="fixed bottom-4 right-4 bg-primary-orange text-primary-dark p-3 rounded-lg shadow-2xl transition-opacity duration-300 opacity-0 hidden">
+        Message goes here.
+    </div>
+    
+    <div id="user-select-modal" class="fixed inset-0 bg-primary-dark bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl max-w-sm w-full relative border border-primary-orange/50" onclick="event.stopPropagation()">
+            <button onclick="hideModal('user-select-modal')" 
+                    class="absolute top-3 right-3 text-muted-text hover:text-light-text transition">
+                <span data-lucide="x" class="w-6 h-6"></span>
+            </button>
+
+            <h3 class="text-2xl font-bold mb-4 text-primary-orange">Switch/Manage Users</h3>
+            
+            <div id="user-list" class="max-h-60 overflow-y-auto pr-2 mb-4 space-y-2">
+                </div>
+
+            <hr class="border-gray-700 mb-4">
+            
+            <button id="add-new-user-btn" onclick="showRegisterModal()" 
+                    class="w-full py-3 bg-primary-orange text-primary-dark font-bold rounded-lg transition duration-200 hover:bg-orange-500 shadow-md mb-2">
+                <span data-lucide="plus" class="w-5 h-5 inline-block -mt-0.5 mr-2"></span> Create New User
+            </button>
+            
+            <button id="data-transfer-btn" onclick="showDataTransferModal()" 
+                    class="w-full py-3 bg-gray-600 text-light-text font-bold rounded-lg transition duration-200 hover:bg-gray-500 shadow-md">
+                <span data-lucide="hard-drive" class="w-5 h-5 inline-block -mt-0.5 mr-2"></span> Data Transfer
+            </button>
+        </div>
+    </div>
+    
+    <div id="login-modal" class="fixed inset-0 bg-primary-dark bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <form id="login-form" class="bg-secondary-dark p-6 rounded-xl shadow-2xl max-w-sm w-full relative border border-green-500/50" onsubmit="event.preventDefault(); loginUser()">
+            <button type="button" onclick="hideModal('login-modal'); showUserSelectModal();" 
+                    class="absolute top-3 right-3 text-muted-text hover:text-light-text transition">
+                <span data-lucide="x" class="w-6 h-6"></span>
+            </button>
+
+            <h3 class="text-2xl font-bold mb-4 text-green-500">Login to User</h3>
+            <p id="login-username" class="mb-4 text-light-text font-semibold"></p>
+            
+            <div class="mb-4">
+                <label for="login-password" class="block text-sm font-medium text-light-text mb-1">Password</label>
+                <input type="password" id="login-password" required
+                       class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:border-green-500 focus:ring-1 focus:ring-green-500 text-light-text">
+            </div>
+            
+            <button type="submit" class="w-full py-3 bg-green-500 text-primary-dark font-bold rounded-lg transition duration-200 hover:bg-green-400 shadow-md">
+                Unlock Data
+            </button>
+            <input type="hidden" id="login-user-id">
+        </form>
+    </div>
+
+    <div id="register-modal" class="fixed inset-0 bg-primary-dark bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <form id="register-form" class="bg-secondary-dark p-6 rounded-xl shadow-2xl max-w-sm w-full relative border border-primary-orange/50" onsubmit="event.preventDefault(); handleNewUserRegistration()">
+            <button type="button" onclick="hideModal('register-modal'); showUserSelectModal();" 
+                    class="absolute top-3 right-3 text-muted-text hover:text-light-text transition">
+                <span data-lucide="x" class="w-6 h-6"></span>
+            </button>
+
+            <h3 class="text-2xl font-bold mb-4 text-primary-orange">Register New User</h3>
+            
+            <div class="mb-4">
+                <label for="register-username" class="block text-sm font-medium text-light-text mb-1">Username</label>
+                <input type="text" id="register-username" required minlength="3"
+                       class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:border-primary-orange focus:ring-1 focus:ring-primary-orange text-light-text">
+            </div>
+            
+            <div class="mb-6">
+                <label for="register-password" class="block text-sm font-medium text-light-text mb-1">Password</label>
+                <input type="password" id="register-password" required minlength="6"
+                       class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:border-primary-orange focus:ring-1 focus:ring-primary-orange text-light-text">
+                <p class="text-xs text-muted-text mt-1">
+                    This password is used to encrypt your list. Do not lose it!
+                </p>
+            </div>
+            
+            <button type="submit" class="w-full py-3 bg-primary-orange text-primary-dark font-bold rounded-lg transition duration-200 hover:bg-orange-500 shadow-md">
+                Create & Switch
+            </button>
+        </form>
+    </div>
+    
+    <div id="data-transfer-modal" class="fixed inset-0 bg-primary-dark bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl max-w-sm w-full relative border border-primary-orange/50" onclick="event.stopPropagation()">
+            <button onclick="hideModal('data-transfer-modal'); showUserSelectModal();" 
+                    class="absolute top-3 right-3 text-muted-text hover:text-light-text transition">
+                <span data-lucide="x" class="w-6 h-6"></span>
+            </button>
+
+            <h3 class="text-2xl font-bold mb-4 text-primary-orange">Data Transfer</h3>
+            <p class="text-sm text-muted-text mb-6">
+                Export or import a secure backup of the current user's data.
+            </p>
+            
+            <div class="mb-6 p-4 border border-gray-700 rounded-lg">
+                <h4 class="text-xl font-semibold mb-2 flex items-center">
+                    <span data-lucide="download" class="w-5 h-5 mr-2 text-green-500"></span> Export Backup
+                </h4>
+                <p class="text-xs text-muted-text mb-3">
+                    Creates a JSON file containing the encrypted list and user settings for the active user.
+                </p>
+                <button onclick="exportUserData()" 
+                        class="w-full py-2 bg-green-500 text-primary-dark font-bold rounded-lg transition duration-200 hover:bg-green-400 shadow-md">
+                    Download User Data
+                </button>
+            </div>
+            
+            <div class="p-4 border border-gray-700 rounded-lg">
+                <h4 class="text-xl font-semibold mb-2 flex items-center">
+                    <span data-lucide="upload" class="w-5 h-5 mr-2 text-primary-orange"></span> Import Backup
+                </h4>
+                <p class="text-xs text-muted-text mb-3">
+                    Imports a user backup file. A **new user** will be created. You'll need the original password to log in.
+                </p>
+                <input type="file" id="import-file-input" accept=".json" class="hidden" onchange="handleImportFile(this.files[0])">
+                <button onclick="document.getElementById('import-file-input').click()" 
+                        class="w-full py-2 bg-primary-orange text-primary-dark font-bold rounded-lg transition duration-200 hover:bg-orange-500 shadow-md">
+                    Choose Backup File
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        const JIKAN_API_URL = 'https://api.jikan.moe/v4/anime';
+        
+        // Storage Keys
+        const ALL_USERS_KEY = 'animeTrackerAllUsers'; 
+        const ACTIVE_USER_ID_KEY = 'animeTrackerActiveUserId'; 
+        const ENCRYPTED_LIST_PREFIX = 'animeTrackerEncryptedList_'; 
+        const FILTER_STORAGE_KEY = 'animeTrackerFilters';
+
+        // PBKDF2 Constants
+        const PBKDF2_ITERATIONS = 100000;
+        const SALT_LENGTH = 16; // 16 bytes = 128 bits
+        const KEY_ALGORITHM = { name: "AES-GCM", length: 256 };
+        
+        const CATEGORIES = ['Pending', 'Watching', 'Watched'];
+        
+        let animeList = [];
+        let lastAPICall = 0;
+        const RATE_LIMIT_MS = 1000; 
+        
+        // --- USER AND ENCRYPTION VARIABLES (UPDATED) ---
+        // Structure: { id: 'uuid', username: 'Name', salt: 'base64', iterations: 100000 }
+        let allUsers = []; 
+        let currentUser = null; // { id: 'uuid', username: 'Name', key: CryptoKey object }
+        const IV_LENGTH = 12; // AES-GCM uses 12-byte IV
+        // ------------------------------------------
+        
+        // --- CACHING VARIABLES FOR OPTIMIZATION ---
+        let lastQuery = ''; 
+        let lastJikanResultsCache = []; 
+        // ------------------------------------------
+
+        // Default sort: Newest first
+        let currentSortKey = 'timestamp_desc'; 
+        let activeFilters = { 'Pending': true, 'Watching': true, 'Watched': true }; 
+
+        const searchInput = document.getElementById('search-input');
+        const searchResultsDiv = document.getElementById('search-results');
+        const searchMessageDiv = document.getElementById('search-message');
+        const trackingListDiv = document.getElementById('tracking-list');
+        const emptyListMessage = document.getElementById('empty-list-message');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const toastElement = document.getElementById('toast-message');
+        const clearButton = document.getElementById('clear-search-btn');
+        const sortSelect = document.getElementById('sort-select');
+        const filterControlsDiv = document.getElementById('filter-controls');
+        const usernameDisplay = document.getElementById('current-username');
+
+        // --- Long Press Feature Variables ---
+        const LONG_PRESS_DURATION = 500; // milliseconds
+        let pressTimer = null;
+        let isLongPressing = false; 
+        let currentlyPressedId = null; 
+        // ------------------------------------
+        
+        // --- ENCRYPTION & KEY DERIVATION UTILITIES (UPDATED) ---
+
+        /**
+         * Converts a string (Base64) to an ArrayBuffer.
+         */
+        function str2ab(base64Str) {
+            const binary_string = window.atob(base64Str);
+            const len = binary_string.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binary_string.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        /**
+         * Converts an ArrayBuffer to a string (Base64).
+         */
+        function ab2str(buffer) {
+            return window.btoa(String.fromCharCode.apply(null, new Uint8Array(buffer)));
+        }
+
+        /**
+         * Derives an AES-GCM key from a password and salt using PBKDF2.
+         * @param {string} password - The user's password.
+         * @param {string} base64Salt - The salt stored in the user profile (Base64 encoded).
+         * @returns {Promise<CryptoKey>} The derived AES-GCM key.
+         */
+        async function deriveKey(password, base64Salt) {
+            const saltBuffer = str2ab(base64Salt);
+            const passwordBuffer = new TextEncoder().encode(password);
+
+            // 1. Import the password as a raw key for PBKDF2
+            const passwordKey = await crypto.subtle.importKey(
+                "raw",
+                passwordBuffer,
+                { name: "PBKDF2" },
+                false, // Not extractable
+                ["deriveKey"]
+            );
+
+            // 2. Derive the AES-GCM key
+            return crypto.subtle.deriveKey(
+                {
+                    name: "PBKDF2",
+                    salt: saltBuffer,
+                    iterations: PBKDF2_ITERATIONS,
+                    hash: "SHA-256",
+                },
+                passwordKey,
+                KEY_ALGORITHM,
+                true, // Extractable (for future flexibility, though not used here)
+                ["encrypt", "decrypt"]
+            );
+        }
+
+        /**
+         * Encrypts the anime list data using AES-GCM and the user's key.
+         */
+        async function encryptData(data) {
+            if (!currentUser || !currentUser.key) throw new Error("Encryption key not available.");
+
+            const jsonString = JSON.stringify(data);
+            const dataBuffer = new TextEncoder().encode(jsonString);
+            const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH)); // Generate random IV
+
+            const encryptedBuffer = await crypto.subtle.encrypt(
+                { name: "AES-GCM", iv: iv },
+                currentUser.key,
+                dataBuffer
+            );
+
+            // Combine IV and encrypted data for storage
+            const combined = new Uint8Array(iv.length + encryptedBuffer.byteLength);
+            combined.set(iv, 0);
+            combined.set(new Uint8Array(encryptedBuffer), iv.length);
+
+            return ab2str(combined.buffer); // Store as Base64 string
+        }
+
+        /**
+         * Decrypts the Base64-encoded data using AES-GCM and the user's key.
+         */
+        async function decryptData(base64Encrypted) {
+            if (!currentUser || !currentUser.key) throw new Error("Decryption key not available.");
+            if (!base64Encrypted) return [];
+
+            const combinedBuffer = str2ab(base64Encrypted);
+            const combinedArray = new Uint8Array(combinedBuffer);
+
+            // Separate IV and encrypted data
+            const iv = combinedArray.slice(0, IV_LENGTH);
+            const encryptedData = combinedArray.slice(IV_LENGTH);
+
+            const decryptedBuffer = await crypto.subtle.decrypt(
+                { name: "AES-GCM", iv: iv },
+                currentUser.key,
+                encryptedData
+            );
+
+            const jsonString = new TextDecoder().decode(decryptedBuffer);
+            return JSON.parse(jsonString);
+        }
+
+        // --- USER MANAGEMENT (REFACTORED) ---
+
+        /**
+         * Generates a random UUID (simple version).
+         */
+        function generateUUID() {
+            return 'xxxx-xxxx-4xxx-yxxx-xxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+        
+        /**
+         * Loads all user profiles from storage. Creates a default user if none exist.
+         */
+        function loadAllUsers() {
+            const storedUsers = localStorage.getItem(ALL_USERS_KEY);
+
+            if (storedUsers) {
+                try {
+                    allUsers = JSON.parse(storedUsers);
+                    // Filter out any old format users (those with jwk) for security/migration simplicity
+                    allUsers = allUsers.filter(u => u.salt); 
+                } catch(e) {
+                    console.error("Error parsing user list, resetting allUsers.");
+                    allUsers = [];
+                }
+            }
+            
+            // If no users remain after filtering/loading, create the initial user
+            if (!allUsers || allUsers.length === 0) {
+                console.log("No secure users found. Creating initial user.");
+                const initialUserId = generateUUID();
+                // Note: The new user will be created with default credentials
+                addNewUser(initialUserId, initialUserId, "default", true); 
+                saveAllUsers(); // Save the new default user list
+            }
+        }
+        
+        /**
+         * Saves the current allUsers array to storage.
+         */
+        function saveAllUsers() {
+            localStorage.setItem(ALL_USERS_KEY, JSON.stringify(allUsers));
+        }
+
+        /**
+         * Derives key, sets the provided user ID as the active user, and loads data.
+         * Password validation check is handled by the subsequent decryption attempt in loadList.
+         * @param {string} userId - The ID of the user to activate.
+         * @param {string} password - The password for key derivation.
+         * @returns {Promise<boolean>} True if login was successful, false otherwise.
+         */
+        async function setActiveUser(userId, password) {
+            const userProfile = allUsers.find(u => u.id === userId);
+
+            if (!userProfile) {
+                showToast(`Error: User ID ${userId} not found.`);
+                return false;
+            }
+
+            try {
+                // 1. Derive the key from password and salt
+                const derivedKey = await deriveKey(password, userProfile.salt);
+                
+                // 2. Set the current user state (TEMPORARILY set, will be cleared on failure)
+                currentUser = { 
+                    id: userProfile.id, 
+                    username: userProfile.username, 
+                    key: derivedKey 
+                };
+                
+                // 3. Load the encrypted list specific to this user (Triggers password check/decryption)
+                // If the key is wrong, loadList will throw an error and we jump to the catch block.
+                await loadList(); 
+                
+                // If we reach here, the password was correct. Finalize the state.
+                localStorage.setItem(ACTIVE_USER_ID_KEY, userId); // Save as active
+                usernameDisplay.textContent = `User: ${currentUser.username}`;
+                
+                showToast(`Switched to user: ${currentUser.username}`);
+                
+                // 4. Close modals
+                hideModal('login-modal');
+                hideModal('user-select-modal');
+                hideModal('data-transfer-modal');
+                
+                return true;
+
+            } catch (error) {
+                console.error("Login attempt failed:", error);
+
+                // IMPORTANT: Clear the potentially incorrect key from memory and UI state
+                currentUser = null;
+                document.getElementById('login-password').value = ''; 
+                
+                let errorMessage = `Login failed for ${userProfile.username}. Please try again.`;
+
+                if (error.message === "INCORRECT_PASSWORD") {
+                    errorMessage = `Incorrect password for user: ${userProfile.username}.`;
+                } else {
+                    errorMessage = `Login error for ${userProfile.username}. Data may be corrupted.`;
+                }
+                
+                showToast(errorMessage);
+                
+                return false;
+            }
+        }
+
+        /**
+         * Creates a new user profile with a derived key.
+         */
+        async function addNewUser(id, username, password, isInitialSetup = false) {
+            try {
+                // 1. Generate unique salt
+                const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+                const base64Salt = ab2str(salt.buffer);
+
+                // 2. Add the user profile (salt is stored, not the key)
+                const newUserProfile = { 
+                    id: id, 
+                    username: username,
+                    salt: base64Salt,
+                    iterations: PBKDF2_ITERATIONS // For future proofing/flexibility
+                };
+                
+                allUsers.push(newUserProfile);
+                saveAllUsers();
+                
+                if (!isInitialSetup) {
+                    await setActiveUser(id, password);
+                    showToast(`User "${username}" created and set as active.`);
+                    renderUserList(); 
+                    hideModal('register-modal');
+                }
+
+            } catch (error) {
+                console.error("Error creating new user:", error);
+                showToast("Error creating new user. See console.");
+            }
+        }
+        
+        /**
+         * Deletes a user profile and their encrypted data.
+         */
+        function deleteUser(userId) {
+            if (allUsers.length === 1) {
+                showToast("Cannot delete the only remaining user.");
+                return;
+            }
+            
+            if (currentUser && currentUser.id === userId) {
+                 showToast("Cannot delete the currently active user. Switch first.");
+                 return;
+            }
+
+            const userToDelete = allUsers.find(u => u.id === userId);
+            const confirmDelete = window.confirm(`Are you sure you want to delete user ${userToDelete.username} and ALL their tracking data? This cannot be undone.`);
+            
+            if (confirmDelete) {
+                allUsers = allUsers.filter(u => u.id !== userId);
+                saveAllUsers();
+                
+                // Also delete the encrypted list data for that user
+                localStorage.removeItem(ENCRYPTED_LIST_PREFIX + userId);
+                
+                showToast(`User ${userToDelete.username} and their data deleted.`);
+                renderUserList();
+            }
+        }
+
+        /**
+         * Initializes user system: loads all users and sets the active user.
+         */
+        async function initializeUser() {
+            // 1. Load all users (creates initial user if none exist)
+            loadAllUsers(); 
+
+            // 2. Determine the active user ID
+            let activeId = localStorage.getItem(ACTIVE_USER_ID_KEY);
+            
+            // Fallback: If no active ID is set, or the stored ID is not secure, use the first user.
+            if (!activeId || !allUsers.some(u => u.id === activeId)) {
+                if (allUsers.length > 0) {
+                    activeId = allUsers[0].id;
+                    localStorage.setItem(ACTIVE_USER_ID_KEY, activeId);
+                } else {
+                    // This case should be handled by loadAllUsers() creating the first user, 
+                    // but is a safeguard.
+                    usernameDisplay.textContent = 'Setup Required';
+                    showRegisterModal(true); // Force registration
+                    return;
+                }
+            }
+            
+            // 3. Trigger login modal for the active user if it's not the initial 'default' setup attempt
+            const userProfile = allUsers.find(u => u.id === activeId);
+            if(userProfile) {
+                // If it's the very first time loading, and it's the auto-created user,
+                // try to log in with "default" automatically to get the app running.
+                const isFirstTimeUser = allUsers.length === 1 && activeId === userProfile.id && localStorage.getItem(ENCRYPTED_LIST_PREFIX + activeId) === null;
+                
+                if (isFirstTimeUser) {
+                    // Attempt silent login with the default password
+                    const success = await setActiveUser(activeId, "default");
+                    if (!success) {
+                         // If the silent login failed (e.g. data corruption), fall back to manual login
+                        showUserSelectModal();
+                    }
+                } else {
+                    // Normal behavior: prompt for password
+                    handleUserSwitchAttempt(activeId);
+                }
+            } else {
+                 usernameDisplay.textContent = 'Setup Required';
+                 showRegisterModal(true);
+            }
+
+            lucide.createIcons();
+        }
+
+        // --- Message and Visibility Functions ---
+        
+        /**
+         * Utility function to hide any modal.
+         */
+        function hideModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        /**
+         * Shows a temporary toast message to the user.
+         */
+        function showToast(message) {
+            toastElement.textContent = message;
+            toastElement.classList.remove('hidden', 'opacity-0');
+            toastElement.classList.add('opacity-100');
+            setTimeout(() => {
+                toastElement.classList.remove('opacity-100');
+                toastElement.classList.add('opacity-0');
+                setTimeout(() => {
+                    toastElement.classList.add('hidden');
+                }, 300);
+            }, 3000);
+        }
+
+        // --- List Data Functions ---
+
+        /**
+         * Loads the anime list from localStorage (Encrypted).
+         * Throws an error if decryption fails (signals incorrect password/key).
+         */
+        async function loadList() {
+            if (!currentUser) {
+                console.error("Attempted to load list without an active user.");
+                animeList = [];
+                return;
+            }
+            
+            const listKey = ENCRYPTED_LIST_PREFIX + currentUser.id;
+            const storedEncryptedList = localStorage.getItem(listKey);
+
+            if (storedEncryptedList) {
+                try {
+                    // Decrypt using the current user's active key
+                    animeList = await decryptData(storedEncryptedList);
+                } catch (error) {
+                    // This is the check: If the list exists but the key derived from the password fails to decrypt it, 
+                    // we assume the password was incorrect and propagate an error to setActiveUser.
+                    console.error("Decryption failure during load (wrong key/password):", error);
+                    throw new Error("INCORRECT_PASSWORD"); 
+                }
+            } else {
+                animeList = [];
+            }
+            
+            // Standardize and validate list data
+            animeList = animeList.map(anime => ({
+                ...anime,
+                category: anime.category || 'Pending',
+                timestamp: anime.timestamp || Date.now() 
+            }));
+
+            if (sortSelect) sortSelect.value = currentSortKey;
+            loadFilters();
+            renderFilterControls();
+            renderTrackingList();
+            updateSearchMessageVisibility();
+        }
+
+        /**
+         * Saves the current anime list to localStorage (Encrypted).
+         */
+        async function saveList() {
+            if (!currentUser) {
+                 console.error("Attempted to save list without an active user.");
+                 return;
+            }
+            
+            const listKey = ENCRYPTED_LIST_PREFIX + currentUser.id;
+
+            try {
+                const encryptedList = await encryptData(animeList); // Uses currentUser.key
+                localStorage.setItem(listKey, encryptedList);
+                
+                renderFilterControls(); 
+                renderTrackingList();
+                updateSearchMessageVisibility(); 
+
+                const currentQuery = searchInput.value.trim();
+                if (currentQuery.length >= 3) {
+                    handleSearch(currentQuery); 
+                }
+            } catch (error) {
+                console.error("Error encrypting or saving list:", error);
+                showToast("Error saving data. Please check console.");
+            }
+        }
+        
+        // --- DATA TRANSFER FUNCTIONS (NEW) ---
+        
+        /**
+         * Exports the current user's profile and encrypted list data as a downloadable JSON file.
+         */
+        function exportUserData() {
+             if (!currentUser) {
+                showToast("Error: No active user to export.");
+                return;
+            }
+            
+            // 1. Get the current user profile (which contains the salt/iterations)
+            const userProfile = allUsers.find(u => u.id === currentUser.id);
+            if (!userProfile) {
+                showToast("Error: User profile not found in system.");
+                return;
+            }
+            
+            // 2. Get the encrypted data string
+            const encryptedList = localStorage.getItem(ENCRYPTED_LIST_PREFIX + currentUser.id);
+            
+            if (!encryptedList) {
+                 const confirmExportEmpty = window.confirm(`User ${currentUser.username} has no saved list data. Export profile only?`);
+                 if (!confirmExportEmpty) return;
+            }
+
+            // 3. Create the backup object
+            const backupData = {
+                __backup_version: '1.0',
+                user_profile: {
+                    id: userProfile.id,
+                    username: userProfile.username,
+                    salt: userProfile.salt,
+                    iterations: userProfile.iterations 
+                },
+                encrypted_list_data: encryptedList,
+                backup_timestamp: new Date().toISOString()
+            };
+
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", `anime_tracker_backup_${userProfile.username}_${Date.now()}.json`);
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+            
+            showToast("Export successful! Backup file downloaded.");
+            hideModal('data-transfer-modal');
+        }
+
+        /**
+         * Handles the file input for importing user data.
+         */
+        function handleImportFile(file) {
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    await importUserData(data);
+                } catch (error) {
+                    console.error("Import failed:", error);
+                    showToast("Import failed: File is corrupted or not a valid JSON backup.");
+                }
+            };
+            reader.readAsText(file);
+        }
+        
+        /**
+         * Imports the user data from a parsed backup object.
+         */
+        async function importUserData(backupData) {
+            if (backupData.__backup_version !== '1.0' || !backupData.user_profile || !backupData.encrypted_list_data) {
+                showToast("Import failed: Backup file structure is invalid.");
+                return;
+            }
+
+            const profile = backupData.user_profile;
+            const encryptedList = backupData.encrypted_list_data;
+            let newId = profile.id;
+            let newUsername = profile.username;
+            
+            // Handle ID conflict
+            if (allUsers.some(u => u.id === profile.id)) {
+                newId = generateUUID();
+                newUsername = `${profile.username} (Imported - ${newId.substring(0, 4)})`;
+            }
+            
+            // 1. Create the new user profile based on imported salt/iterations
+            const newUserProfile = {
+                id: newId,
+                username: newUsername,
+                salt: profile.salt,
+                iterations: profile.iterations 
+            };
+            
+            allUsers.push(newUserProfile);
+            saveAllUsers();
+
+            // 2. Save the encrypted data for the new user's storage key
+            localStorage.setItem(ENCRYPTED_LIST_PREFIX + newId, encryptedList);
+
+            showToast(`User "${newUsername}" imported successfully! You must now log in with the **original password** for this profile.`);
+            
+            // 3. Prompt user to switch to the imported profile
+            hideModal('data-transfer-modal');
+            renderUserList();
+            handleUserSwitchAttempt(newId);
+        }
+        
+        /**
+         * Shows the data transfer modal.
+         */
+        function showDataTransferModal() {
+            hideModal('user-select-modal');
+            const modal = document.getElementById('data-transfer-modal');
+            modal.classList.remove('hidden');
+            
+            // Update the username in the export section
+            const exportText = modal.querySelector('.p-4:nth-child(1) p');
+            if (exportText && currentUser) {
+                 exportText.innerHTML = `Creates a JSON file containing the encrypted list and user settings for **${currentUser.username}**.`;
+            }
+            
+            // Clear file input from previous use
+            document.getElementById('import-file-input').value = ''; 
+        }
+
+        // --- Modal/UI Logic (New & Updated) ---
+        
+        /**
+         * Renders the list of users in the modal.
+         */
+        function renderUserList() {
+            const userListDiv = document.getElementById('user-list');
+            if (!userListDiv) return;
+
+            userListDiv.innerHTML = allUsers.map(user => {
+                const isActive = currentUser && currentUser.id === user.id;
+                const baseClasses = 'flex items-center justify-between p-3 rounded-lg border transition duration-150';
+                
+                const classes = isActive 
+                    ? `${baseClasses} bg-primary-orange/20 border-primary-orange text-light-text font-semibold`
+                    : `${baseClasses} bg-gray-700 border-gray-700 hover:bg-gray-600 text-muted-text hover:text-light-text cursor-pointer`;
+                
+                return `
+                    <div class="${classes}">
+                        <div onclick="${isActive ? '' : `handleUserSwitchAttempt('${user.id}')`}" class="flex-grow flex items-center">
+                            <span data-lucide="${isActive ? 'user-check' : 'user'}" class="w-5 h-5 mr-3 ${isActive ? 'text-primary-orange' : 'text-muted-text'}"></span>
+                            <span class="font-semibold text-sm" title="${user.id}">${user.username}</span>
+                            ${isActive ? '<span class="ml-2 px-2 py-0.5 text-xs bg-primary-orange text-primary-dark rounded-full">Active</span>' : ''}
+                        </div>
+                        
+                        <button onclick="deleteUser('${user.id}')" 
+                                class="ml-4 text-muted-text hover:text-red-500 p-1 rounded-full ${isActive ? 'opacity-50 cursor-not-allowed' : ''}"
+                                ${isActive ? 'disabled' : ''}>
+                            <span data-lucide="trash-2" class="w-4 h-4"></span>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+            
+            lucide.createIcons();
+        }
+        
+        /**
+         * Shows the user selection modal and populates the list.
+         */
+        function showUserSelectModal() {
+            loadAllUsers(); 
+            renderUserList(); 
+            
+            const modal = document.getElementById('user-select-modal');
+            modal.classList.remove('hidden');
+            
+            // Add click outside listener on the modal backdrop
+            modal.onclick = (event) => {
+                if (event.target === modal) {
+                    hideModal('user-select-modal');
+                }
+            };
+        }
+        
+        /**
+         * Shows the new user registration modal.
+         */
+        function showRegisterModal(isForced = false) {
+            hideModal('user-select-modal');
+            const modal = document.getElementById('register-modal');
+            modal.classList.remove('hidden');
+            document.getElementById('register-username').value = '';
+            document.getElementById('register-password').value = '';
+
+            // If forced (no users exist), hide the close button
+            const closeBtn = modal.querySelector('button[onclick="hideModal(\'register-modal\'); showUserSelectModal();"]');
+            if (closeBtn) closeBtn.style.display = isForced ? 'none' : 'block';
+        }
+
+        /**
+         * Handles the form submission for new user registration.
+         */
+        async function handleNewUserRegistration() {
+            const username = document.getElementById('register-username').value.trim();
+            const password = document.getElementById('register-password').value;
+            
+            if (allUsers.some(u => u.username.toLowerCase() === username.toLowerCase())) {
+                showToast(`Username "${username}" already exists.`);
+                return;
+            }
+
+            if (!username || !password || password.length < 6) {
+                showToast("Username and a password of at least 6 characters are required.");
+                return;
+            }
+            
+            const newId = generateUUID();
+            await addNewUser(newId, username, password, false);
+        }
+
+        /**
+         * Sets up the password prompt for a user switch attempt.
+         */
+        function handleUserSwitchAttempt(userId) {
+            hideModal('user-select-modal');
+            
+            const userProfile = allUsers.find(u => u.id === userId);
+            if (!userProfile) return;
+
+            document.getElementById('login-username').textContent = `Switching to: ${userProfile.username}`;
+            document.getElementById('login-user-id').value = userId;
+            document.getElementById('login-password').value = '';
+            
+            const modal = document.getElementById('login-modal');
+            modal.classList.remove('hidden');
+            
+            // Add click outside listener on the modal backdrop
+            modal.onclick = (event) => {
+                if (event.target === modal) {
+                    hideModal('login-modal');
+                    showUserSelectModal();
+                }
+            };
+        }
+        
+        /**
+         * Handles the login form submission.
+         */
+        async function loginUser() {
+            const userId = document.getElementById('login-user-id').value;
+            const password = document.getElementById('login-password').value;
+            
+            if (!password) {
+                showToast("Password is required.");
+                return;
+            }
+            
+            await setActiveUser(userId, password);
+            // setActiveUser now handles all UI state changes for both success and failure (via the confirm prompt).
+        }
+        
+        // --- Other functions (startLongPress, endLongPress, etc.) omitted for brevity but remain functional ---
+        
+        /**
+         * Utility function for debouncing API calls.
+         */
+        function debounce(func, delay) {
+            let timeoutId;
+            return function(...args) {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => {
+                    func.apply(this, args);
+                }, delay);
+            }; // FIX: Removed extraneous '), 500)' which caused SyntaxError
+        }
+        
+        function updateSearchMessageVisibility() {
+            if (animeList.length > 0) {
+                searchMessageDiv.classList.add('hidden');
+            } else {
+                searchMessageDiv.textContent = 'Search for an anime to begin tracking!';
+                searchMessageDiv.classList.remove('hidden');
+            }
+        }
+        
+        function clearSearch() {
+            searchInput.value = '';
+            searchResultsDiv.innerHTML = '';
+            clearButton.classList.add('hidden');
+            loadingIndicator.classList.add('hidden');
+            updateSearchMessageVisibility(); 
+            lastQuery = '';
+            lastJikanResultsCache = [];
+        }
+
+        function toggleClearButton() {
+            if (searchInput.value.trim().length > 0) {
+                clearButton.classList.remove('hidden');
+            } else {
+                clearButton.classList.add('hidden');
+            }
+        }
+
+        function addAnimeToList(animeData) {
+            if (animeList.some(a => a.id === animeData.mal_id)) {
+                showToast(`${animeData.title} is already in your list!`);
+                return;
+            }
+
+            const newAnime = {
+                id: animeData.mal_id,
+                title: animeData.title,
+                total_episodes: animeData.episodes || 0, // Use 0 if episodes is null/unknown
+                watched_episodes: 0,
+                image_url: animeData.images.webp.image_url,
+                status: animeData.status,
+                category: 'Pending', // Initialize with Pending
+                timestamp: Date.now() // Add timestamp for sorting
+            };
+
+            animeList.push(newAnime);
+            saveList(); 
+            showToast(`Added "${newAnime.title}" to your list!`);
+            clearSearch(); 
+        }
+
+        function removeAnimeFromList(id) {
+            animeList = animeList.filter(a => a.id !== id);
+            saveList(); 
+            showToast('Anime removed from list.');
+        }
+
+        function updateEpisodeCount(id, newCount) {
+            const anime = animeList.find(a => a.id === id);
+            if (anime) {
+                const total = anime.total_episodes;
+                const isIncrement = newCount > anime.watched_episodes;
+                newCount = Math.max(0, Math.min(newCount, total || 9999));
+                
+                if (newCount > 0 && total > 0 && newCount >= total) {
+                    if (anime.category !== 'Watched') {
+                        anime.category = 'Watched';
+                        showToast(`Congratulations! "${anime.title}" is now marked as Watched.`);
+                    }
+                } 
+                else if (isIncrement && newCount > 0 && anime.category === 'Pending') {
+                    anime.category = 'Watching';
+                    showToast(`Starting to watch "${anime.title}". Status set to Watching.`);
+                } else if (newCount < total && anime.category === 'Watched') {
+                    anime.category = 'Watching';
+                } else if (newCount === 0 && anime.category !== 'Pending') {
+                    anime.category = 'Pending';
+                }
+
+                anime.watched_episodes = newCount;
+                saveList(); 
+            }
+        }
+        
+        function handleEpisodeInputChange(id, element) {
+            const newCount = parseInt(element.value);
+            if (!isNaN(newCount)) {
+                updateEpisodeCount(id, newCount);
+            }
+        }
+        
+        function updateAnimeCategory(id, element) {
+            const newCategory = element.value;
+            const anime = animeList.find(a => a.id === id);
+            if (anime) {
+                anime.category = newCategory;
+                if (newCategory === 'Watched' && anime.total_episodes > 0) {
+                    anime.watched_episodes = anime.total_episodes;
+                }
+                if (newCategory === 'Pending') {
+                    anime.watched_episodes = 0;
+                }
+                saveList(); 
+                showToast(`Category for "${anime.title}" set to ${newCategory}.`);
+            }
+        }
+
+        function sortAndRenderList(sortKey) {
+            currentSortKey = sortKey;
+            renderTrackingList();
+        }
+
+        function loadFilters() {
+            const storedFilters = localStorage.getItem(FILTER_STORAGE_KEY);
+            if (storedFilters) activeFilters = JSON.parse(storedFilters);
+        }
+
+        function saveFilters() {
+            localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(activeFilters));
+        }
+
+        function toggleFilter(category) {
+            if (activeFilters.hasOwnProperty(category)) {
+                const activeCount = Object.values(activeFilters).filter(v => v).length;
+                if (activeFilters[category] === true && activeCount === 1) {
+                    showToast("At least one category must remain visible.");
+                    return;
+                }
+
+                activeFilters[category] = !activeFilters[category];
+                saveFilters(); 
+                renderFilterControls(); 
+                renderTrackingList(); 
+            }
+        }
+        
+        function renderFilterControls() {
+            if (!filterControlsDiv) return;
+
+            filterControlsDiv.innerHTML = CATEGORIES.map(category => {
+                const isActive = activeFilters[category];
+                const count = animeList.filter(a => a.category === category).length;
+                let classes = 'px-4 py-2 rounded-lg font-semibold transition-all duration-200 shadow-md text-sm';
+                let colorMap = {
+                    'Pending': 'border-gray-500 bg-gray-700 hover:bg-gray-600',
+                    'Watching': 'border-primary-orange bg-primary-orange/50 hover:bg-primary-orange/70',
+                    'Watched': 'border-green-500 bg-green-700 hover:bg-green-600'
+                };
+
+                if (isActive) {
+                    classes += ` border-2 text-light-text ${colorMap[category]}`;
+                } else {
+                    classes += ' border-2 border-gray-700 bg-gray-900 text-muted-text opacity-50 hover:opacity-75';
+                }
+
+                return `<button 
+                            onclick="toggleFilter('${category}')" 
+                            class="${classes}"
+                        >
+                            ${category} (${count})
+                        </button>`;
+            }).join('');
+
+            lucide.createIcons();
+        }
+
+
+        // --- Long Press Logic ---
+        
+        function startLongPress(id, event) {
+            if (event.type === 'mousedown' && event.button !== 0) return; 
+            event.preventDefault(); 
+            
+            isLongPressing = false;
+            currentlyPressedId = id;
+            if (pressTimer) clearTimeout(pressTimer);
+
+            const indicator = document.getElementById(`long-press-indicator-${id}`);
+            if (indicator) {
+                indicator.style.transition = 'none';
+                indicator.style.width = '0%';
+                indicator.style.opacity = '1';
+
+                setTimeout(() => {
+                    indicator.style.transition = `width ${LONG_PRESS_DURATION / 1000}s linear`;
+                    indicator.style.width = '100%';
+                }, 10);
+            }
+            
+            pressTimer = setTimeout(() => {
+                isLongPressing = true;
+                longPressAction(id);
+                pressTimer = null; 
+            }, LONG_PRESS_DURATION);
+        }
+
+        function endLongPress() {
+            if (pressTimer) {
+                clearTimeout(pressTimer);
+                pressTimer = null;
+                
+                if (currentlyPressedId !== null) {
+                    const indicator = document.getElementById(`long-press-indicator-${currentlyPressedId}`);
+                    if (indicator) {
+                        indicator.style.transition = 'width 0.1s ease-out, opacity 0.1s ease-out'; 
+                        indicator.style.width = '0%';
+                        indicator.style.opacity = '0';
+                    }
+                }
+            }
+            
+            const wasLongPress = isLongPressing;
+            isLongPressing = false;
+            currentlyPressedId = null;
+            return wasLongPress; 
+        }
+
+        function longPressAction(id) {
+            const anime = animeList.find(a => a.id === id);
+            if (anime) {
+                updateEpisodeCount(id, anime.watched_episodes + 1);
+                
+                const indicator = document.getElementById(`long-press-indicator-${id}`);
+                if (indicator) {
+                    indicator.style.transition = 'background-color 0s';
+                    indicator.style.backgroundColor = '#10b981'; 
+                    indicator.style.width = '100%'; 
+
+                    setTimeout(() => {
+                        indicator.style.width = '0%';
+                        indicator.style.transition = 'none';
+                        indicator.style.backgroundColor = '#f97316'; 
+                        indicator.style.opacity = '0';
+                    }, 100); 
+                }
+
+                showToast(`Episode incremented for "${anime.title}"!`);
+            }
+            currentlyPressedId = null;
+        }
+
+
+        async function searchJikanAPI(query) {
+            const now = Date.now();
+            if (now - lastAPICall < RATE_LIMIT_MS) {
+                await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_MS - (now - lastAPICall)));
+            }
+            lastAPICall = Date.now();
+
+            try {
+                const url = `${JIKAN_API_URL}?q=${encodeURIComponent(query)}&limit=8`;
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`API returned status ${response.status}`);
+                }
+                
+                const data = await response.json();
+                return data.data || []; 
+            } catch (error) {
+                console.error("Error fetching anime from Jikan:", error);
+                throw new Error("API_ERROR"); 
+            }
+        }
+        
+        function searchLocalList(query) {
+            if (!query) return [];
+            const lowerQuery = query.toLowerCase();
+            return animeList
+                .filter(anime => anime.title.toLowerCase().includes(lowerQuery))
+                .map(anime => ({
+                    mal_id: anime.id,
+                    is_local: true, 
+                }));
+        }
+
+
+        async function handleSearch(query) {
+            query = query.trim();
+
+            if (query.length < 3) {
+                searchResultsDiv.innerHTML = '';
+                searchMessageDiv.textContent = 'Please enter at least 3 characters to search.';
+                searchMessageDiv.classList.remove('hidden');
+                loadingIndicator.classList.add('hidden');
+                return;
+            }
+            
+            searchResultsDiv.innerHTML = '';
+            searchMessageDiv.classList.add('hidden');
+            loadingIndicator.classList.remove('hidden');
+            
+            const localResults = searchLocalList(query);
+            let jikanResults = [];
+            let apiError = false;
+            const localIds = new Set(localResults.map(r => r.mal_id));
+            const isSameQuery = (query === lastQuery);
+
+            if (!isSameQuery) {
+                try {
+                    jikanResults = await searchJikanAPI(query);
+                    lastJikanResultsCache = jikanResults; 
+                    lastQuery = query; 
+                } catch (error) {
+                    if (error.message === "API_ERROR") apiError = true;
+                    lastJikanResultsCache = []; 
+                    lastQuery = ''; 
+                }
+            } else {
+                jikanResults = lastJikanResultsCache;
+            }
+            
+            loadingIndicator.classList.add('hidden');
+
+            const uniqueJikanResults = jikanResults.filter(jikanAnime => {
+                return !localIds.has(jikanAnime.mal_id);
+            });
+            
+            let allResults = localResults.concat(uniqueJikanResults);
+            
+            if (apiError) {
+                searchResultsDiv.innerHTML += `
+                    <p class="text-red-500 col-span-full p-4 rounded-xl bg-secondary-dark/50 text-center mb-6">
+                        Error fetching external data. Displaying local matches only.
+                    </p>
+                `;
+            }
+
+            if (allResults.length === 0) {
+                 searchMessageDiv.textContent = apiError ? 
+                    'No local matches found.' :
+                    'No results found for your query, locally or online.';
+                 searchMessageDiv.classList.remove('hidden');
+                 return;
+            }
+            
+            renderSearchResults(allResults);
+        }
+
+        const debouncedSearch = debounce(() => {
+            const query = searchInput.value;
+            handleSearch(query);
+        }, 500); 
+
+
+        function generateTrackedAnimeCardHtml(anime, isSearchContext = false) {
+            const progressPercent = anime.total_episodes > 0 
+                ? (anime.watched_episodes / anime.total_episodes) * 100 
+                : 0;
+            const isCompleted = anime.watched_episodes >= anime.total_episodes && anime.total_episodes > 0;
+            let titleColorClass = 'text-light-text';
+            let borderClass = 'border-gray-500';
+
+            switch(anime.category) {
+                case 'Watched':
+                    titleColorClass = 'text-green-400';
+                    borderClass = 'border-green-500';
+                    break;
+                case 'Watching':
+                    titleColorClass = 'text-primary-orange';
+                    borderClass = 'border-primary-orange';
+                    break;
+            }
+            
+            const progressBarColorClass = isCompleted ? 'bg-green-500' : 'bg-primary-orange';
+            const progressTextColorClass = isCompleted ? 'text-green-400' : 'text-light-text';
+
+            return `
+                <div id="tracked-anime-${anime.id}" 
+                     class="bg-secondary-dark p-4 rounded-xl shadow-2xl flex flex-col border-2 ${borderClass} transition-all duration-300 relative overflow-hidden"
+                     onmousedown="startLongPress(${anime.id}, event)"
+                     ontouchstart="startLongPress(${anime.id}, event)"
+                     onmouseup="endLongPress()"
+                     ontouchend="endLongPress()"
+                     onmouseleave="endLongPress()"
+                     ontouchmove="endLongPress()"
+                     style="cursor: pointer;"
+                >
+                    <div id="long-press-indicator-${anime.id}" class="long-press-indicator"></div>
+                    
+                    <div class="flex items-start mb-4" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+                        <img src="${anime.image_url}" 
+                             onerror="this.onerror=null; this.src='https://placehold.co/80x120/1f2937/9ca3af?text=No+Image'"
+                             alt="${anime.title} poster" 
+                             class="w-16 h-24 object-cover rounded-lg mr-4 shadow-md">
+                        <div class="flex-grow">
+                            <h3 class="text-xl font-bold ${titleColorClass} leading-tight" title="${anime.title}">${anime.title}</h3>
+                            
+                            <select onchange="updateAnimeCategory(${anime.id}, this)"
+                                    class="mt-1 mb-2 p-1.5 text-sm rounded-lg bg-gray-700 border border-primary-orange/50 focus:ring-1 focus:ring-primary-orange focus:border-primary-orange text-light-text w-full max-w-[150px] appearance-none cursor-pointer">
+                                <option value="Pending" ${anime.category === 'Pending' ? 'selected' : ''}>Pending</option>
+                                <option value="Watching" ${anime.category === 'Watching' ? 'selected' : ''}>Watching</option>
+                                <option value="Watched" ${anime.category === 'Watched' ? 'selected' : ''}>Watched</option>
+                            </select>
+
+                            <p class="text-sm text-muted-text">Total Episodes: <span class="font-semibold">${anime.total_episodes || 'Unknown'}</span></p>
+                            <p class="text-xs text-light-text/70">${anime.status || 'N/A'}</p>
+                        </div>
+                        <button onclick="removeAnimeFromList(${anime.id})" 
+                                class="text-muted-text hover:text-red-500 transition duration-200 p-1 rounded-full">
+                            <span data-lucide="x" class="w-5 h-5"></span>
+                        </button>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <div class="text-sm font-medium mb-1 ${progressTextColorClass}">
+                            ${anime.watched_episodes} / ${anime.total_episodes || '?'} Watched
+                        </div>
+                        <div class="w-full bg-gray-700 rounded-full h-2.5">
+                            <div class="h-2.5 rounded-full ${progressBarColorClass}" 
+                                 style="width: ${progressPercent > 100 ? 100 : progressPercent}%"></div>
+                        </div>
+                    </div>
+
+                    <div class="flex space-x-2 mt-auto" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+                        <button onclick="updateEpisodeCount(${anime.id}, ${anime.watched_episodes - 1})" 
+                                class="p-2 bg-primary-orange/30 text-light-text rounded-lg hover:bg-primary-orange/50 transition duration-150">
+                            <span data-lucide="minus" class="w-4 h-4"></span>
+                        </button>
+                        
+                        <input type="number" 
+                               value="${anime.watched_episodes}" 
+                               onchange="handleEpisodeInputChange(${anime.id}, this)"
+                               min="0"
+                               max="${anime.total_episodes || 9999}"
+                               class="w-full text-center p-2 rounded-lg bg-gray-700 border border-primary-orange/50 focus:border-primary-orange focus:ring-1 focus:ring-primary-orange text-light-text font-mono">
+
+                        <button onclick="updateEpisodeCount(${anime.id}, ${anime.watched_episodes + 1})" 
+                                class="p-2 bg-primary-orange text-primary-dark rounded-lg hover:bg-orange-500 transition duration-150">
+                            <span data-lucide="plus" class="w-4 h-4"></span>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSearchResults(results) {
+            searchResultsDiv.innerHTML = results.map(anime => {
+                const isLocalMatch = anime.is_local; 
+                
+                if (isLocalMatch) {
+                    const trackedAnime = animeList.find(a => a.id === anime.mal_id);
+                    if (trackedAnime) return generateTrackedAnimeCardHtml(trackedAnime, true);
+                }
+                
+                let buttonHtml = `<button onclick="addAnimeToList(${JSON.stringify(anime).replace(/"/g, '&quot;')})" 
+                                    class="w-full py-2 bg-primary-orange text-primary-dark font-bold rounded-lg mt-3 transition duration-200 hover:bg-orange-500 shadow-md shadow-primary-orange/30">
+                                      <span data-lucide="plus" class="w-4 h-4 inline-block -mt-0.5"></span> Add to List
+                                 </button>`;
+                
+                return `
+                    <div class="bg-secondary-dark/50 p-4 rounded-xl shadow-xl hover:bg-secondary-dark/70 flex flex-col transition duration-300">
+                        <div class="relative">
+                            <img src="${anime.images?.webp?.image_url || 'https://placehold.co/100x150/1f2937/9ca3af?text=No+Image'}" 
+                                 onerror="this.onerror=null; this.src='https://placehold.co/100x150/1f2937/9ca3af?text=No+Image'"
+                                 alt="${anime.title} poster" 
+                                 class="w-full h-48 object-cover rounded-lg mb-3 shadow-md border border-primary-orange/20">
+                        </div>
+                        <h3 class="text-lg font-semibold text-primary-orange truncate" title="${anime.title}">${anime.title}</h3>
+                        <p class="text-sm text-muted-text flex-grow">
+                            Total Episodes: <span class="font-semibold">${anime.episodes || 'Unknown'}</span> | Status: ${anime.status || 'N/A'}
+                        </p>
+                        ${buttonHtml}
+                    </div>
+                `;
+            }).join('');
+            
+            lucide.createIcons();
+        }
+
+        function renderTrackingList() {
+            if (animeList.length === 0) {
+                trackingListDiv.innerHTML = '';
+                emptyListMessage.classList.remove('hidden');
+                return;
+            }
+            
+            emptyListMessage.classList.add('hidden');
+
+            let sortedList = [...animeList]; 
+            
+            if (currentSortKey === 'title_asc') sortedList.sort((a, b) => a.title.localeCompare(b.title));
+            else if (currentSortKey === 'title_desc') sortedList.sort((a, b) => b.title.localeCompare(a.title));
+            else if (currentSortKey === 'timestamp_desc') sortedList.sort((a, b) => b.timestamp - a.timestamp); 
+            else if (currentSortKey === 'timestamp_asc') sortedList.sort((a, b) => a.timestamp - b.timestamp);
+            
+            const filteredList = sortedList.filter(anime => activeFilters[anime.category]);
+
+            if (filteredList.length === 0) {
+                 trackingListDiv.innerHTML = `<p class="text-center text-muted-text mt-4 col-span-full text-xl">
+                     No anime visible under the current filters. Click the filter buttons above to change visibility.
+                 </p>`;
+                 return;
+            }
+
+            trackingListDiv.innerHTML = filteredList.map(anime => {
+                return generateTrackedAnimeCardHtml(anime, false);
+            }).join('');
+            
+            lucide.createIcons();
+        }
+
+        // --- Initialization ---
+
+        window.onload = () => {
+            initializeUser(); 
+        };
+
+        // Expose global functions for HTML interaction
+        window.debouncedSearch = debouncedSearch;
+        window.addAnimeToList = addAnimeToList;
+        window.removeAnimeFromList = removeAnimeFromList;
+        window.updateEpisodeCount = updateEpisodeCount;
+        window.handleEpisodeInputChange = handleEpisodeInputChange;
+        window.updateAnimeCategory = updateAnimeCategory;
+        window.sortAndRenderList = sortAndRenderList; 
+        window.toggleFilter = toggleFilter; 
+        window.clearSearch = clearSearch;
+        window.toggleClearButton = toggleClearButton;
+        window.startLongPress = startLongPress;
+        window.endLongPress = endLongPress;
+        window.handleSearch = handleSearch;
+        
+        // Expose new user management functions
+        window.showUserSelectModal = showUserSelectModal;
+        window.setActiveUser = setActiveUser;
+        window.addNewUser = addNewUser;
+        window.deleteUser = deleteUser;
+        window.showRegisterModal = showRegisterModal;
+        window.handleNewUserRegistration = handleNewUserRegistration;
+        window.handleUserSwitchAttempt = handleUserSwitchAttempt;
+        window.loginUser = loginUser;
+        window.hideModal = hideModal; // Expose hideModal
+        
+        // Expose NEW Data Transfer Functions
+        window.exportUserData = exportUserData;
+        window.handleImportFile = handleImportFile;
+        window.showDataTransferModal = showDataTransferModal;
+        
+    </script>
+</body>
+</html>
