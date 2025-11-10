@@ -1,0 +1,22 @@
+{
+  "name": "Anime Tracker",
+  "short_name": "AniTrack",
+  "description": "Barebones AI Generated local anime tracker",
+  "start_url": "https://dependentchemical.github.io/anitrack/",
+  "scope": "https://dependentchemical.github.io/anitrack/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "https://dependentchemical.github.io/anitrack/favicon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://dependentchemical.github.io/anitrack/favicon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
