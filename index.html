@@ -1095,7 +1095,8 @@
             animeList.push(newAnime);
             saveList(); 
             showToast(`Added "${newAnime.title}" to your list!`);
-            clearSearch(); 
+            //Manually clear the search to add multiple items.
+            //clearSearch(); 
         }
 
         function removeAnimeFromList(id) {
@@ -1212,82 +1213,6 @@
 
             lucide.createIcons();
         }
-
-
-        // --- Long Press Logic ---
-        
-        function startLongPress(id, event) {
-            if (event.type === 'mousedown' && event.button !== 0) return; 
-            event.preventDefault(); 
-            
-            isLongPressing = false;
-            currentlyPressedId = id;
-            if (pressTimer) clearTimeout(pressTimer);
-
-            const indicator = document.getElementById(`long-press-indicator-${id}`);
-            if (indicator) {
-                indicator.style.transition = 'none';
-                indicator.style.width = '0%';
-                indicator.style.opacity = '1';
-
-                setTimeout(() => {
-                    indicator.style.transition = `width ${LONG_PRESS_DURATION / 1000}s linear`;
-                    indicator.style.width = '100%';
-                }, 10);
-            }
-            
-            pressTimer = setTimeout(() => {
-                isLongPressing = true;
-                longPressAction(id);
-                pressTimer = null; 
-            }, LONG_PRESS_DURATION);
-        }
-
-        function endLongPress() {
-            if (pressTimer) {
-                clearTimeout(pressTimer);
-                pressTimer = null;
-                
-                if (currentlyPressedId !== null) {
-                    const indicator = document.getElementById(`long-press-indicator-${currentlyPressedId}`);
-                    if (indicator) {
-                        indicator.style.transition = 'width 0.1s ease-out, opacity 0.1s ease-out'; 
-                        indicator.style.width = '0%';
-                        indicator.style.opacity = '0';
-                    }
-                }
-            }
-            
-            const wasLongPress = isLongPressing;
-            isLongPressing = false;
-            currentlyPressedId = null;
-            return wasLongPress; 
-        }
-
-        function longPressAction(id) {
-            const anime = animeList.find(a => a.id === id);
-            if (anime) {
-                updateEpisodeCount(id, anime.watched_episodes + 1);
-                
-                const indicator = document.getElementById(`long-press-indicator-${id}`);
-                if (indicator) {
-                    indicator.style.transition = 'background-color 0s';
-                    indicator.style.backgroundColor = '#10b981'; 
-                    indicator.style.width = '100%'; 
-
-                    setTimeout(() => {
-                        indicator.style.width = '0%';
-                        indicator.style.transition = 'none';
-                        indicator.style.backgroundColor = '#f97316'; 
-                        indicator.style.opacity = '0';
-                    }, 100); 
-                }
-
-                showToast(`Episode incremented for "${anime.title}"!`);
-            }
-            currentlyPressedId = null;
-        }
-
 
         async function searchJikanAPI(query) {
             const now = Date.now();
@@ -1417,12 +1342,6 @@
             return `
                 <div id="tracked-anime-${anime.id}" 
                      class="bg-secondary-dark p-4 rounded-xl shadow-2xl flex flex-col border-2 ${borderClass} transition-all duration-300 relative overflow-hidden"
-                     onmousedown="startLongPress(${anime.id}, event)"
-                     ontouchstart="startLongPress(${anime.id}, event)"
-                     onmouseup="endLongPress()"
-                     ontouchend="endLongPress()"
-                     onmouseleave="endLongPress()"
-                     ontouchmove="endLongPress()"
                      style="cursor: pointer;"
                 >
                     <div id="long-press-indicator-${anime.id}" class="long-press-indicator"></div>
