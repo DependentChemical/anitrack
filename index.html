@@ -170,14 +170,7 @@
                     <span data-lucide="list-checks" class="w-6 h-6 ml-2 text-primary-orange"></span>
                 </h2>
                 <div class="flex items-center space-x-2">
-                    <label for="sort-select" class="text-muted-text text-sm hidden sm:block">Sort By:</label>
-                    <select id="sort-select" onchange="sortAndRenderList(this.value)"
-                            class="p-2 rounded-lg bg-gray-700 border border-primary-orange/50 focus:ring-1 focus:ring-primary-orange focus:border-primary-orange text-light-text text-sm cursor-pointer">
-                        <option value="timestamp_desc">Date Added (Newest)</option>
-                        <option value="timestamp_asc">Date Added (Oldest)</option>
-                        <option value="title_asc">Name (A-Z)</option>
-                        <option value="title_desc">Name (Z-A)</option>
-                    </select>
+                    <!-- Sort moved to the filter controls row -->
                 </div>
             </div>
             
@@ -316,6 +309,47 @@
         </div>
     </div>
 
+    <!-- Group selection modal -->
+    <div id="group-selection-modal" class="fixed inset-0 bg-primary-dark bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl max-w-md w-full relative border border-primary-orange/50" onclick="event.stopPropagation()">
+            <button onclick="document.getElementById('group-selection-modal').classList.add('hidden')" 
+                    class="absolute top-3 right-3 text-muted-text hover:text-light-text transition">
+                <span data-lucide="x" class="w-6 h-6"></span>
+            </button>
+
+            <h3 class="text-2xl font-bold mb-4 text-primary-orange">Select a Group</h3>
+
+            <div id="group-selection-list" class="max-h-56 overflow-y-auto mb-4 space-y-2 p-1">
+                <!-- groups injected here -->
+            </div>
+
+            <div class="flex items-center justify-between">
+                <button onclick="showCreateGroupModal()" class="py-2 px-3 bg-primary-orange text-primary-dark rounded-lg font-bold">Create Group</button>
+                <button onclick="document.getElementById('group-selection-modal').classList.add('hidden')" class="py-2 px-3 bg-gray-700 text-light-text rounded-lg">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create group modal -->
+    <div id="create-group-modal" class="fixed inset-0 bg-primary-dark bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl max-w-sm w-full relative border border-primary-orange/50" onclick="event.stopPropagation()">
+            <button onclick="document.getElementById('create-group-modal').classList.add('hidden')" 
+                    class="absolute top-3 right-3 text-muted-text hover:text-light-text transition">
+                <span data-lucide="x" class="w-6 h-6"></span>
+            </button>
+
+            <h3 class="text-2xl font-bold mb-4 text-primary-orange">Create Group</h3>
+            <div class="mb-4">
+                <label class="block text-sm text-light-text mb-1">Group Name</label>
+                <input id="create-group-name" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-light-text" placeholder="e.g. Favorites">
+            </div>
+            <div class="flex space-x-2">
+                <button onclick="createGroup()" class="flex-1 py-2 bg-primary-orange text-primary-dark font-bold rounded-lg">Create</button>
+                <button onclick="document.getElementById('create-group-modal').classList.add('hidden')" class="flex-1 py-2 bg-gray-700 text-light-text rounded-lg">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Confirmation modal for deleting an anime -->
     <div id="confirm-delete-modal" class="fixed inset-0 bg-primary-dark bg-opacity-70 z-50 flex items-center justify-center hidden">
         <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl max-w-sm w-full relative border border-primary-orange/50" onclick="event.stopPropagation()">
@@ -339,6 +373,30 @@
             </div>
         </div>
     </div>
+    
+    <!-- Confirmation modal for deleting a GROUP -->
+    <div id="confirm-delete-group-modal" class="fixed inset-0 bg-primary-dark bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl max-w-sm w-full relative border border-primary-orange/50" onclick="event.stopPropagation()">
+            <button onclick="cancelGroupDelete()" 
+                    class="absolute top-3 right-3 text-muted-text hover:text-light-text transition">
+                <span data-lucide="x" class="w-6 h-6"></span>
+            </button>
+
+            <h3 class="text-2xl font-bold mb-4 text-primary-orange">Delete Group</h3>
+            <p id="confirm-delete-group-message" class="text-light-text mb-6">Are you sure you want to delete this group?</p>
+
+            <div class="flex space-x-2">
+                <button onclick="cancelGroupDelete()" 
+                        class="flex-1 py-2 bg-gray-700 text-light-text font-bold rounded-lg transition duration-200 hover:bg-gray-600">
+                    Cancel
+                </button>
+                <button onclick="confirmGroupDelete()" 
+                        class="flex-1 py-2 bg-red-500 text-primary-dark font-bold rounded-lg transition duration-200 hover:bg-red-400">
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
 
 
     <script>
@@ -348,7 +406,9 @@
         const ALL_USERS_KEY = 'animeTrackerAllUsers'; 
         const ACTIVE_USER_ID_KEY = 'animeTrackerActiveUserId'; 
         const ENCRYPTED_LIST_PREFIX = 'animeTrackerEncryptedList_'; 
-        const FILTER_STORAGE_KEY = 'animeTrackerFilters';
+    const FILTER_STORAGE_KEY = 'animeTrackerFilters';
+    const GROUPS_STORAGE_KEY = 'animeTrackerGroups';
+    const GROUP_FILTER_KEY = 'animeTrackerGroupFilter';
 
         // PBKDF2 Constants
         const PBKDF2_ITERATIONS = 100000;
@@ -358,6 +418,8 @@
         const CATEGORIES = ['Pending', 'Watching', 'Watched'];
         
         let animeList = [];
+    let groups = []; // { id, name }
+    let activeGroupFilter = null; // null = all
         let lastAPICall = 0;
         const RATE_LIMIT_MS = 1000; 
         
@@ -425,31 +487,30 @@
          * @returns {Promise<CryptoKey>} The derived AES-GCM key.
          */
         async function deriveKey(password, base64Salt) {
-            const saltBuffer = str2ab(base64Salt);
-            const passwordBuffer = new TextEncoder().encode(password);
+            // base64Salt is expected to be a Base64 string representing the salt bytes
+            const saltBuf = new Uint8Array(str2ab(base64Salt));
+            const pwUtf8 = new TextEncoder().encode(password);
 
-            // 1. Import the password as a raw key for PBKDF2
-            const passwordKey = await crypto.subtle.importKey(
-                "raw",
-                passwordBuffer,
-                { name: "PBKDF2" },
-                false, // Not extractable
-                ["deriveKey"]
+            // Import the raw password as a key for PBKDF2
+            const baseKey = await crypto.subtle.importKey(
+                'raw', pwUtf8, { name: 'PBKDF2' }, false, ['deriveKey']
             );
 
-            // 2. Derive the AES-GCM key
-            return crypto.subtle.deriveKey(
+            // Derive an AES-GCM key using PBKDF2
+            const derivedKey = await crypto.subtle.deriveKey(
                 {
-                    name: "PBKDF2",
-                    salt: saltBuffer,
+                    name: 'PBKDF2',
+                    salt: saltBuf,
                     iterations: PBKDF2_ITERATIONS,
-                    hash: "SHA-256",
+                    hash: 'SHA-256'
                 },
-                passwordKey,
+                baseKey,
                 KEY_ALGORITHM,
-                true, // Extractable (for future flexibility, though not used here)
-                ["encrypt", "decrypt"]
+                false,
+                ['encrypt', 'decrypt']
             );
+
+            return derivedKey;
         }
 
         /**
@@ -1239,6 +1300,49 @@
             if (storedFilters) activeFilters = JSON.parse(storedFilters);
         }
 
+        function loadGroups() {
+            const stored = localStorage.getItem(GROUPS_STORAGE_KEY);
+            if (stored) {
+                try {
+                    groups = JSON.parse(stored);
+                } catch (e) {
+                    console.error('Failed to parse groups from storage', e);
+                    groups = [];
+                }
+            } else {
+                groups = [];
+            }
+            // Load saved active group filter (validate against existing groups)
+            const storedFilter = localStorage.getItem(GROUP_FILTER_KEY);
+            activeGroupFilter = storedFilter ? storedFilter : null;
+            if (activeGroupFilter && !groups.some(g => g.id === activeGroupFilter)) {
+                activeGroupFilter = null;
+                localStorage.removeItem(GROUP_FILTER_KEY);
+            }
+        }
+
+        function saveGroups() {
+            localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(groups));
+            // Update filter controls when groups change
+            try { renderFilterControls(); } catch (e) { /* safe-fail */ }
+        }
+
+        function setActiveGroupFilter(value) {
+            // value: '' or undefined => clear filter (show all)
+            activeGroupFilter = value || null;
+            if (activeGroupFilter === '') activeGroupFilter = null;
+            if (activeGroupFilter && !groups.some(g => g.id === activeGroupFilter)) {
+                activeGroupFilter = null;
+            }
+            if (activeGroupFilter) {
+                localStorage.setItem(GROUP_FILTER_KEY, activeGroupFilter);
+            } else {
+                localStorage.removeItem(GROUP_FILTER_KEY);
+            }
+            renderFilterControls();
+            renderTrackingList();
+        }
+
         function saveFilters() {
             localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(activeFilters));
         }
@@ -1261,7 +1365,21 @@
         function renderFilterControls() {
             if (!filterControlsDiv) return;
 
-            filterControlsDiv.innerHTML = CATEGORIES.map(category => {
+            // Build group filter dropdown (left) if groups exist
+            let groupHtml = '';
+            if (groups && groups.length > 0) {
+                groupHtml = `
+                    <div class="flex items-center mr-4">
+                        <label for="group-filter-select" class="text-muted-text text-sm mr-2 hidden sm:inline">Filter by Group:</label>
+                        <select id="group-filter-select" onchange="setActiveGroupFilter(this.value)" class="px-3 py-2 pr-12 rounded-lg bg-gray-700 border border-gray-700 text-light-text text-sm">
+                            <option value="">All Groups</option>
+                            ${groups.map(g => `<option value="${g.id}" ${activeGroupFilter === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`).join('')}
+                        </select>
+                    </div>
+                `;
+            }
+
+            const categoriesHtml = CATEGORIES.map(category => {
                 const isActive = activeFilters[category];
                 const count = animeList.filter(a => a.category === category).length;
                 let classes = 'px-4 py-2 rounded-lg font-semibold transition-all duration-200 shadow-md text-sm';
@@ -1284,6 +1402,27 @@
                             ${category} (${count})
                         </button>`;
             }).join('');
+
+            filterControlsDiv.innerHTML = `
+                <div class="flex items-center justify-between w-full">
+                    <div class="flex items-center space-x-2 flex-1">
+                        ${categoriesHtml}
+                    </div>
+                    <div class="flex items-center space-x-3 ml-4">
+                        ${groupHtml}
+                        <div class="flex items-center space-x-2">
+                            <label for="sort-select" class="text-muted-text text-sm hidden sm:block">Sort By:</label>
+                            <select id="sort-select" onchange="sortAndRenderList(this.value)"
+                                    class="p-2 rounded-lg bg-gray-700 border border-primary-orange/50 focus:ring-1 focus:ring-primary-orange focus:border-primary-orange text-light-text text-sm cursor-pointer">
+                                <option value="timestamp_desc">Date Added (Newest)</option>
+                                <option value="timestamp_asc">Date Added (Oldest)</option>
+                                <option value="title_asc">Name (A-Z)</option>
+                                <option value="title_desc">Name (Z-A)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            `;
 
             lucide.createIcons();
         }
@@ -1437,18 +1576,24 @@
 
                             <p class="text-sm text-muted-text">Total Episodes: <span class="font-semibold">${anime.total_episodes || 'Unknown'}</span></p>
                             <p class="text-xs text-light-text/70">${anime.status || 'N/A'}</p>
+                            ${anime.group ? `<p class="text-xs text-muted-text mt-1">Group: <span class="text-primary-orange font-semibold">${escapeHtml(getGroupName(anime.group) || 'Unknown')}</span></p>` : ''}
                         </div>
                         <div class="card-action-wrapper ml-4">
                             <button class="card-action-button" onclick="toggleCardMenu(${anime.id}, event)" onmousedown="event.stopPropagation()" title="Actions">
                                 <span data-lucide="more-vertical" class="w-5 h-5"></span>
                             </button>
 
-                            <div id="card-menu-${anime.id}" class="card-action-menu hidden" onclick="event.stopPropagation()" data-title="${anime.title}">
-                                <button class="delete-option" onclick="showDeleteConfirm(${anime.id})">
-                                    <span data-lucide="trash-2" class="w-4 h-4 inline-block mr-2 align-middle"></span>
-                                    Delete
-                                </button>
-                            </div>
+                                        <div id="card-menu-${anime.id}" class="card-action-menu hidden" onclick="event.stopPropagation()" data-title="${anime.title}">
+                                            <button onclick="showGroupSelectionModal(${anime.id})">
+                                                <span data-lucide="layers" class="w-4 h-4 inline-block mr-2 align-middle"></span>
+                                                Add to group
+                                            </button>
+                                            <div class="my-1 border-t border-gray-700"></div>
+                                            <button class="delete-option" onclick="showDeleteConfirm(${anime.id})">
+                                                <span data-lucide="trash-2" class="w-4 h-4 inline-block mr-2 align-middle"></span>
+                                                Delete
+                                            </button>
+                                        </div>
                         </div>
                     </div>
                     
@@ -1583,6 +1728,124 @@
             lucide.createIcons();
         }
 
+        // --- Group selection / creation UI ---
+        function showGroupSelectionModal(animeId) {
+            pendingGroupSelectionAnimeId = animeId;
+            loadGroups();
+            const modal = document.getElementById('group-selection-modal');
+            const list = document.getElementById('group-selection-list');
+            if (!modal || !list) return;
+            // render groups
+            if (!groups || groups.length === 0) {
+                list.innerHTML = '<p class="text-sm text-muted-text">No groups yet. Create one below.</p>';
+            } else {
+                list.innerHTML = groups.map(g => `
+                    <div class="flex items-center justify-between p-2 rounded-lg hover:bg-gray-800">
+                        <div class="flex items-center">
+                            <span class="text-light-text font-medium mr-3">${escapeHtml(g.name)}</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button class="p-2 bg-primary-orange text-primary-dark rounded-lg text-sm" onclick="assignAnimeToGroup('${g.id}')">Add</button>
+                            <button class="p-2 text-muted-text hover:text-red-400" onclick="deleteGroup('${g.id}')"><span data-lucide="trash-2" class="w-4 h-4"></span></button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            modal.classList.remove('hidden');
+            // stop click outside from closing when interacting inside
+            modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
+            lucide.createIcons();
+        }
+
+        let pendingGroupSelectionAnimeId = null;
+    let pendingGroupDeleteId = null;
+
+        function assignAnimeToGroup(groupId) {
+            if (!pendingGroupSelectionAnimeId) return;
+            const anime = animeList.find(a => a.id === pendingGroupSelectionAnimeId);
+            if (!anime) return;
+            anime.group = groupId;
+            saveList();
+            showToast(`Added "${anime.title}" to group "${getGroupName(groupId)}".`);
+            // close modal
+            const modal = document.getElementById('group-selection-modal');
+            if (modal) modal.classList.add('hidden');
+            pendingGroupSelectionAnimeId = null;
+        }
+
+        function showCreateGroupModal() {
+            const modal = document.getElementById('create-group-modal');
+            if (!modal) return;
+            document.getElementById('create-group-name').value = '';
+            modal.classList.remove('hidden');
+            modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
+        }
+
+        function createGroup() {
+            const name = document.getElementById('create-group-name').value.trim();
+            if (!name) { showToast('Group name is required.'); return; }
+            // enforce unique group names (case-insensitive)
+            const lower = name.toLowerCase();
+            if (groups.some(g => g.name.toLowerCase() === lower)) { showToast('A group with that name already exists.'); return; }
+            const id = generateUUID();
+            groups.push({ id, name });
+            saveGroups();
+            // refresh group modal list
+            const list = document.getElementById('group-selection-list');
+            if (list) showGroupSelectionModal(pendingGroupSelectionAnimeId);
+            // close create modal
+            const modal = document.getElementById('create-group-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function deleteGroup(groupId) {
+            // Show styled confirmation modal for group deletion
+            const g = groups.find(x => x.id === groupId);
+            if (!g) return;
+            pendingGroupDeleteId = groupId;
+            const msg = document.getElementById('confirm-delete-group-message');
+            const modal = document.getElementById('confirm-delete-group-modal');
+            if (msg) msg.textContent = `Delete group "${g.name}"? Anime in this group will not be deleted.`;
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function confirmGroupDelete() {
+            if (!pendingGroupDeleteId) return;
+            const groupId = pendingGroupDeleteId;
+            const g = groups.find(x => x.id === groupId);
+            if (!g) return;
+            groups = groups.filter(x => x.id !== groupId);
+            // Remove group association from anime items (but do not delete anime)
+            animeList.forEach(a => { if (a.group === groupId) delete a.group; });
+            saveGroups();
+            saveList();
+            pendingGroupDeleteId = null;
+            const modal = document.getElementById('confirm-delete-group-modal');
+            if (modal) modal.classList.add('hidden');
+            // refresh modal if open
+            const selModal = document.getElementById('group-selection-modal');
+            if (selModal && !selModal.classList.contains('hidden')) showGroupSelectionModal(null);
+        }
+
+        function cancelGroupDelete() {
+            pendingGroupDeleteId = null;
+            const modal = document.getElementById('confirm-delete-group-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        // Utility to get group name by id
+        function getGroupName(id) {
+            const g = groups.find(x => x.id === id);
+            return g ? g.name : null;
+        }
+
+        // Simple escape for insertion into HTML templates
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
         function renderTrackingList() {
             if (animeList.length === 0) {
                 trackingListDiv.innerHTML = '';
@@ -1599,7 +1862,12 @@
             else if (currentSortKey === 'timestamp_desc') sortedList.sort((a, b) => b.timestamp - a.timestamp); 
             else if (currentSortKey === 'timestamp_asc') sortedList.sort((a, b) => a.timestamp - b.timestamp);
             
-            const filteredList = sortedList.filter(anime => activeFilters[anime.category]);
+            let filteredList = sortedList.filter(anime => activeFilters[anime.category]);
+
+            // Apply group filter if set
+            if (activeGroupFilter) {
+                filteredList = filteredList.filter(a => a.group === activeGroupFilter);
+            }
 
             if (filteredList.length === 0) {
                  trackingListDiv.innerHTML = `<p class="text-center text-muted-text mt-4 col-span-full text-xl">
@@ -1706,6 +1974,7 @@
         // --- Initialization ---
 
         window.onload = () => {
+            loadGroups();
             initializeUser(); 
         };
 
