@@ -79,6 +79,32 @@
             z-index: 10;
         }
         
+        /* Replacement highlight animation for search -> tracked card swap */
+        @keyframes replaceHighlight {
+            0% { transform: scale(0.98); box-shadow: 0 0 0 rgba(249,115,22,0); }
+            30% { transform: scale(1.03); box-shadow: 0 8px 24px rgba(249,115,22,0.18); }
+            100% { transform: scale(1); box-shadow: 0 0 0 rgba(249,115,22,0); }
+        }
+        .replace-highlight {
+            animation: replaceHighlight 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
+            will-change: transform, box-shadow;
+        }
+        /* Card action menu styles */
+        .card-action-wrapper { position: relative; }
+        .card-action-button { background: transparent; border: none; color: #9ca3af; padding: 6px; border-radius: 6px; }
+        .card-action-button:hover { color: #f97316; background: rgba(249,115,22,0.06); }
+        .card-action-menu { position: absolute; right: 0; top: 2.25rem; background: #111827; border: 1px solid rgba(249,115,22,0.12); padding: 6px; border-radius: 8px; min-width: 140px; box-shadow: 0 6px 18px rgba(0,0,0,0.6); z-index: 40; }
+        .card-action-menu button { display: block; width: 100%; text-align: left; background: transparent; border: none; color: #f3f4f6; padding: 8px 10px; border-radius: 6px; }
+        .card-action-menu button:hover { background: rgba(255,255,255,0.03); color: #ffedd5; }
+        .card-action-menu.hidden { display: none; }
+    /* slide/opacity animation for opening the menu */
+    .card-action-menu { opacity: 0; transform: translateY(-6px); transition: opacity 180ms cubic-bezier(0.2,0.8,0.2,1), transform 180ms cubic-bezier(0.2,0.8,0.2,1); }
+    .card-action-menu.visible { opacity: 1; transform: translateY(0); }
+    /* emphasize delete option - red background with white text/icon */
+    .card-action-menu .delete-option { background: #dc2626; color: #ffffff; display: block; padding: 8px 10px; border-radius: 6px; }
+    .card-action-menu .delete-option span { color: #ffffff; }
+    .card-action-menu .delete-option:hover { background: #b91c1c; color: #ffffff; }
+        
     </style>
     <script>
         tailwind.config = {
@@ -285,6 +311,30 @@
                 <button onclick="document.getElementById('import-file-input').click()" 
                         class="w-full py-2 bg-primary-orange text-primary-dark font-bold rounded-lg transition duration-200 hover:bg-orange-500 shadow-md">
                     Choose Backup File
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation modal for deleting an anime -->
+    <div id="confirm-delete-modal" class="fixed inset-0 bg-primary-dark bg-opacity-70 z-50 flex items-center justify-center hidden">
+        <div class="bg-secondary-dark p-6 rounded-xl shadow-2xl max-w-sm w-full relative border border-primary-orange/50" onclick="event.stopPropagation()">
+            <button onclick="cancelDelete()" 
+                    class="absolute top-3 right-3 text-muted-text hover:text-light-text transition">
+                <span data-lucide="x" class="w-6 h-6"></span>
+            </button>
+
+            <h3 class="text-2xl font-bold mb-4 text-primary-orange">Confirm Removal</h3>
+            <p id="confirm-delete-message" class="text-light-text mb-6">Do you want to remove this anime?</p>
+
+            <div class="flex space-x-2">
+                <button onclick="cancelDelete()" 
+                        class="flex-1 py-2 bg-gray-700 text-light-text font-bold rounded-lg transition duration-200 hover:bg-gray-600">
+                    Cancel
+                </button>
+                <button onclick="confirmDelete()" 
+                        class="flex-1 py-2 bg-red-500 text-primary-dark font-bold rounded-lg transition duration-200 hover:bg-red-400">
+                    Delete
                 </button>
             </div>
         </div>
@@ -1095,6 +1145,30 @@
             animeList.push(newAnime);
             saveList(); 
             showToast(`Added "${newAnime.title}" to your list!`);
+            // Replace the corresponding search-result card (if present) with the tracked anime card
+            try {
+                const searchResultEl = document.getElementById(`search-result-${newAnime.id}`);
+                if (searchResultEl) {
+                    searchResultEl.outerHTML = generateTrackedAnimeCardHtml(newAnime, true);
+                    // Recreate icons in the newly inserted HTML
+                    lucide.createIcons();
+                    // Add a temporary highlight animation to the newly inserted tracked card
+                    try {
+                        const insertedEl = document.getElementById(`tracked-anime-${newAnime.id}`);
+                        if (insertedEl) {
+                            insertedEl.classList.add('replace-highlight');
+                            // Remove the class after the animation completes
+                            setTimeout(() => insertedEl.classList.remove('replace-highlight'), 900);
+                        }
+                    } catch (innerErr) {
+                        console.warn('Could not apply replacement animation:', innerErr);
+                    }
+                }
+            } catch (e) {
+                // Non-fatal: if replacement fails, just continue
+                console.warn('Could not replace search result card:', e);
+            }
+
             //Manually clear the search to add multiple items.
             //clearSearch(); 
         }
@@ -1364,10 +1438,18 @@
                             <p class="text-sm text-muted-text">Total Episodes: <span class="font-semibold">${anime.total_episodes || 'Unknown'}</span></p>
                             <p class="text-xs text-light-text/70">${anime.status || 'N/A'}</p>
                         </div>
-                        <button onclick="removeAnimeFromList(${anime.id})" 
-                                class="text-muted-text hover:text-red-500 transition duration-200 p-1 rounded-full">
-                            <span data-lucide="x" class="w-5 h-5"></span>
-                        </button>
+                        <div class="card-action-wrapper ml-4">
+                            <button class="card-action-button" onclick="toggleCardMenu(${anime.id}, event)" onmousedown="event.stopPropagation()" title="Actions">
+                                <span data-lucide="more-vertical" class="w-5 h-5"></span>
+                            </button>
+
+                            <div id="card-menu-${anime.id}" class="card-action-menu hidden" onclick="event.stopPropagation()" data-title="${anime.title}">
+                                <button class="delete-option" onclick="showDeleteConfirm(${anime.id})">
+                                    <span data-lucide="trash-2" class="w-4 h-4 inline-block mr-2 align-middle"></span>
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="mb-4">
@@ -1482,7 +1564,7 @@
                                  </button>`;
                 
                 return `
-                    <div class="bg-secondary-dark/50 p-4 rounded-xl shadow-xl hover:bg-secondary-dark/70 flex flex-col transition duration-300">
+                    <div id="search-result-${anime.mal_id}" class="bg-secondary-dark/50 p-4 rounded-xl shadow-xl hover:bg-secondary-dark/70 flex flex-col transition duration-300">
                         <div class="relative">
                             <img src="${anime.images?.webp?.image_url || 'https://placehold.co/100x150/1f2937/9ca3af?text=No+Image'}" 
                                  onerror="this.onerror=null; this.src='https://placehold.co/100x150/1f2937/9ca3af?text=No+Image'"
@@ -1531,6 +1613,94 @@
             }).join('');
             
             lucide.createIcons();
+        }
+
+        // --- Card menu helpers ---
+        function closeAllCardMenus() {
+            document.querySelectorAll('.card-action-menu').forEach(m => {
+                if (m.classList.contains('hidden')) return;
+                // remove visible to play hide transition, then add hidden after transition
+                m.classList.remove('visible');
+                setTimeout(() => {
+                    m.classList.add('hidden');
+                    // reset any inline positioning adjustments
+                    m.style.left = '';
+                    m.style.right = '';
+                }, 220);
+            });
+        }
+
+        function toggleCardMenu(id, event) {
+            if (event && event.stopPropagation) event.stopPropagation();
+            const menu = document.getElementById(`card-menu-${id}`);
+            if (!menu) return;
+            const willShow = menu.classList.contains('hidden');
+            // Close any other open menus (with animation)
+            closeAllCardMenus();
+            if (willShow) {
+                // Show then trigger the visible state for animation
+                // reset any previous inline positions
+                menu.style.left = '';
+                menu.style.right = '';
+                menu.classList.remove('hidden');
+                // allow the browser to apply display before adding visible and measuring
+                requestAnimationFrame(() => {
+                    menu.classList.add('visible');
+                    // After showing, check for horizontal overflow and flip if necessary
+                    const rect = menu.getBoundingClientRect();
+                    const padding = 8; // minimal padding from viewport edge
+                    if (rect.right > window.innerWidth - padding) {
+                        // flip menu to align to the left of the parent
+                        menu.style.right = 'auto';
+                        menu.style.left = '0';
+                    } else {
+                        // normal positioning
+                        menu.style.left = '';
+                        menu.style.right = '0';
+                    }
+                });
+            }
+        }
+
+        function deleteAnimeFromCard(id) {
+            // Close menus first for visual clarity
+            closeAllCardMenus();
+            // Use existing removal function which also saves state
+            removeAnimeFromList(id);
+        }
+
+        // Close menus when clicking outside
+        document.addEventListener('click', (e) => {
+            closeAllCardMenus();
+        });
+
+        // --- Delete confirmation dialog flow ---
+        let pendingDeleteId = null;
+
+        function showDeleteConfirm(id) {
+            closeAllCardMenus();
+            const menu = document.getElementById(`card-menu-${id}`);
+            const title = (menu && menu.dataset && menu.dataset.title) ? menu.dataset.title : 'this anime';
+            pendingDeleteId = id;
+            const modal = document.getElementById('confirm-delete-modal');
+            const msg = document.getElementById('confirm-delete-message');
+            if (msg) msg.textContent = `Do you want to remove "${title}"?`;
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function confirmDelete() {
+            if (pendingDeleteId !== null) {
+                removeAnimeFromList(pendingDeleteId);
+            }
+            pendingDeleteId = null;
+            const modal = document.getElementById('confirm-delete-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function cancelDelete() {
+            pendingDeleteId = null;
+            const modal = document.getElementById('confirm-delete-modal');
+            if (modal) modal.classList.add('hidden');
         }
 
         // --- Initialization ---
